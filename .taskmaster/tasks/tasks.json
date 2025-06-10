@@ -1,0 +1,47 @@
+{
+  "version": 1,
+  "tasks": [
+    {
+      "id": "1",
+      "title": "Install Docker on Mac",
+      "status": "pending",
+      "description": "Install Docker Desktop for Mac",
+      "details": "1. Download Docker Desktop for Mac\n2. Install and launch Docker\n3. Verify Docker is running"
+    },
+    {
+      "id": "2",
+      "title": "Set up Home Assistant Container",
+      "status": "pending",
+      "description": "Configure and run Home Assistant in Docker",
+      "details": "1. Create docker-compose.yml\n2. Set up configuration directory\n3. Start Home Assistant container"
+    },
+    {
+      "id": "3",
+      "title": "Configure iRobot Integration",
+      "status": "pending",
+      "description": "Connect Roomba to Home Assistant",
+      "details": "1. Add iRobot integration\n2. Enter credentials from .env\n3. Verify Roomba connection"
+    },
+    {
+      "id": "4",
+      "title": "Create Roomba Automation",
+      "status": "pending",
+      "description": "Set up automation to run Roomba when leaving home",
+      "details": "1. Create automation in Home Assistant\n2. Set trigger based on iPhone presence\n3. Set action to start Roomba"
+    },
+    {
+      "id": "5",
+      "title": "Modify monitor_iphone.sh",
+      "status": "pending",
+      "description": "Update script to trigger Home Assistant API",
+      "details": "1. Add Home Assistant API call on disconnect\n2. Test the automation"
+    },
+    {
+      "id": "6",
+      "title": "Test and Verify",
+      "status": "pending",
+      "description": "Test the complete automation flow",
+      "details": "1. Test iPhone disconnect triggers Roomba\n2. Verify Roomba starts cleaning\n3. Check logs for any issues"
+    }
+  ]
+}

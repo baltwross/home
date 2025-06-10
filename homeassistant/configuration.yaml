@@ -1,0 +1,44 @@
+
+# Loads default set of integrations. Do not remove.
+default_config:
+
+# iRobot integration
+irobot_roomba:
+  - blid: !secret irobot_blid
+    password: !secret irobot_password
+    name: Roomba
+
+# Input boolean to track iPhone presence
+input_boolean:
+  iphone_home:
+    name: iPhone Home Status
+    initial: false
+    icon: mdi:cellphone
+
+# Automation to run Roomba when iPhone leaves
+automation:
+  - alias: 'Run Roomba when iPhone leaves'
+    trigger:
+      platform: state
+      entity_id: input_boolean.iphone_home
+      from: 'on'
+      to: 'off'
+    action:
+      - service: vacuum.start
+        target:
+          entity_id: vacuum.roomba
+
+  - alias: 'Stop Roomba when iPhone returns'
+    trigger:
+      platform: state
+      entity_id: input_boolean.iphone_home
+      from: 'off'
+      to: 'on'
+    action:
+      - service: vacuum.return_to_base
+        target:
+          entity_id: vacuum.roomba
+
+# Load frontend themes from the themes folder
+frontend:
+  themes: !include_dir_merge_named themes

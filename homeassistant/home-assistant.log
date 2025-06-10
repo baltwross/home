@@ -1,0 +1,5 @@
+2025-06-09 21:23:50.713 WARNING (MainThread) [homeassistant.components.http.ban] Login attempt or request with invalid authentication from 192.168.65.1 (192.168.65.1). Requested URL: '/api/states'. (curl/8.7.1)
+2025-06-09 21:23:59.152 WARNING (MainThread) [homeassistant.components.http.ban] Login attempt or request with invalid authentication from 192.168.65.1 (192.168.65.1). Requested URL: '/api/config'. (curl/8.7.1)
+2025-06-09 21:25:48.165 WARNING (MainThread) [homeassistant.components.http.ban] Login attempt or request with invalid authentication from 192.168.65.1 (192.168.65.1). Requested URL: '/api/'. (curl/8.7.1)
+2025-06-09 21:25:48.182 WARNING (MainThread) [homeassistant.components.http.ban] Login attempt or request with invalid authentication from 192.168.65.1 (192.168.65.1). Requested URL: '/api/config/config_entries/entry'. (curl/8.7.1)
+2025-06-09 21:25:48.196 WARNING (MainThread) [homeassistant.components.http.ban] Login attempt or request with invalid authentication from 192.168.65.1 (192.168.65.1). Requested URL: '/api/config/config_entries/flow'. (curl/8.7.1)
