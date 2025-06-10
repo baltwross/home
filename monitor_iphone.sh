@@ -1,10 +1,12 @@
 #!/bin/bash
 
+# Source environment variables or use default values
+IPHONE_IP=${IPHONE_IP:-"192.168.1.170"}  # Your iPhone's IP address
+HOME_ASSISTANT_URL=${HOME_ASSISTANT_URL:-"http://localhost:8123"}
+HA_ACCESS_TOKEN=${HA_ACCESS_TOKEN:-"YOUR_LONG_LIVED_ACCESS_TOKEN"}  # You'll need to create this in Home Assistant
+
 # --- Configuration ---
 # WiFI Network: http://192.168.1.254/cgi-bin/ipalloc.ha
-IPHONE_IP="192.168.1.170"  # Your iPhone's IP address
-HOME_ASSISTANT_URL="http://localhost:8123"
-AUTH_TOKEN="YOUR_LONG_LIVED_ACCESS_TOKEN"  # You'll need to create this in Home Assistant
 
 # --- State Tracking ---
 # 0 = Disconnected, 1 = Connected
@@ -14,7 +16,7 @@ LAST_STATUS=1
 update_home_assistant() {
   local state=$1
   curl -X POST "$HOME_ASSISTANT_URL/api/states/input_boolean.iphone_home" \
-    -H "Authorization: Bearer $AUTH_TOKEN" \
+    -H "Authorization: Bearer $HA_ACCESS_TOKEN" \
     -H "Content-Type: application/json" \
     -d "{\"state\": \"$state\"}" \
     -s -o /dev/null
@@ -37,7 +39,7 @@ do
     # --- iPhone is CONNECTED ---
     if [ "$LAST_STATUS" -eq 0 ]; then
       echo "$(date): iPhone connected."
-      osascript -e 'display notification "Your iPhone has reconnected to the Wi-Fi." with title "Network Monitor" subtitle "Device is back online" sound name "Blow"'
+      # osascript -e 'display notification "Your iPhone has reconnected to the Wi-Fi." with title "Network Monitor" subtitle "Device is back online" sound name "Blow"'
       update_home_assistant "on"
       LAST_STATUS=1
     fi
@@ -45,7 +47,7 @@ do
     # --- iPhone is DISCONNECTED ---
     if [ "$LAST_STATUS" -eq 1 ]; then
       echo "$(date): iPhone disconnected."
-      osascript -e 'display notification "Your iPhone has left the Wi-Fi." with title "Network Monitor" subtitle "Device is offline" sound name "Submarine"'
+      # osascript -e 'display notification "Your iPhone has left the Wi-Fi." with title "Network Monitor" subtitle "Device is offline" sound name "Submarine"'
       update_home_assistant "off"
       LAST_STATUS=0
     fi
