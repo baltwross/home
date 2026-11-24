@@ -38,7 +38,8 @@ def payload(*stores):
 
 
 def args(**overrides):
-    values = {"dry_run": False, "verbose": False, "test_notify": False}
+    values = {"dry_run": False, "verbose": False, "test_notify": False,
+              "loop": None, "minutes": 330}
     values.update(overrides)
     return argparse.Namespace(**values)
 
@@ -304,6 +305,60 @@ class RunTests(unittest.TestCase):
             self.assertEqual(w.main([]), w.EXIT_CHECK_FAILED)
         with mock.patch.dict(os.environ, {}, clear=True):
             self.assertEqual(w.main([]), w.EXIT_CONFIG)
+
+
+class AlertLinkTests(unittest.TestCase):
+    def hit(self, part):
+        return w.Hit("R1", "Near", "Testville", 2.0, part, "Available Today")
+
+    def test_one_configuration_opens_its_own_page(self):
+        click, buttons = w.alert_links([self.hit(NIGHT_256), self.hit(NIGHT_256)])
+        self.assertTrue(click.endswith("/iphone-duo/7.6-inch-display-256gb-night-sky-unlocked"))
+        self.assertEqual([b["label"] for b in buttons], ["Buy 256GB Night Sky"])
+
+    def test_several_configurations_get_a_button_each(self):
+        click, buttons = w.alert_links([self.hit(NIGHT_256), self.hit(WHITE_256)])
+        self.assertEqual(click, w.BUY_URL)
+        self.assertEqual([b["url"] for b in buttons],
+                         [self.hit(NIGHT_256).buy_url, self.hit(WHITE_256).buy_url])
+
+
+class LoopTests(unittest.TestCase):
+    env = {"DUO_ZIP": "10001", "NTFY_TOPIC": "secret-topic"}
+
+    def loop(self, outcomes, minutes=5):
+        """Run the loop on a fake clock; outcomes are what each check does, in order."""
+        clock = [0.0]
+
+        def sleep(seconds):
+            clock[0] += seconds
+
+        with mock.patch.object(w.time, "monotonic", side_effect=lambda: clock[0]), \
+                mock.patch.object(w.time, "sleep", side_effect=sleep), \
+                mock.patch.object(w, "run", side_effect=outcomes) as run, \
+                mock.patch.object(w, "send_ntfy") as send:
+            code = w.run_loop(args(loop=30, minutes=minutes), self.env)
+        return code, run.call_count, [call.args[2] for call in send.call_args_list]
+
+    def test_checks_every_thirty_seconds_until_time_is_up(self):
+        code, checks, pushes = self.loop([0] * 10)
+        self.assertEqual((code, checks, pushes), (0, 10, []))
+
+    def test_failed_checks_do_not_stop_the_loop(self):
+        outcomes = [w.CheckError("HTTP 541"), 0, w.NotifyError("down"), 0, 0, 0, 0, 0, 0, 0]
+        code, checks, pushes = self.loop(outcomes)
+        self.assertEqual((code, checks, pushes), (0, 10, []))
+
+    def test_a_long_outage_warns_once_and_reports_recovery(self):
+        outcomes = [w.CheckError("HTTP 541")] * 14 + [0] * 6
+        _, checks, pushes = self.loop(outcomes, minutes=10)
+        self.assertEqual(checks, 20)
+        self.assertEqual(pushes, ["iPhone Duo watcher is failing",
+                                  "iPhone Duo watcher: working again"])
+
+    def test_a_configuration_error_stops_the_loop(self):
+        with self.assertRaises(w.ConfigError):
+            self.loop([w.ConfigError("no Apple Store within range")])
 
 
 if __name__ == "__main__":

@@ -1,15 +1,25 @@
 name: iPhone Duo stock watch
 
+# One run watches continuously: it checks every 30 seconds for five and a half
+# hours, then starts the next run before it ends. The schedule is only a safety
+# net that starts a watcher when none is running.
+#
+# To stop it: disable this workflow in the Actions tab, then cancel the run in
+# progress.
+
 on:
   schedule:
-    # Every 5 minutes (GitHub's minimum), offset from the busy top of the hour.
-    - cron: "3-59/5 * * * *"
+    - cron: "7-59/10 * * * *"
   workflow_dispatch:
     inputs:
       test_notification:
         description: Send a test push instead of checking stock
         type: boolean
         default: false
+      minutes:
+        description: Minutes this run keeps watching before handing over
+        type: number
+        default: 330
   pull_request:
     paths:
       - watch_iphone_duo.py
@@ -35,10 +45,42 @@ jobs:
         env:
           DUO_ZIP: "10001"
 
-  watch:
+  gate:
+    # A scheduled run starts a watcher only when no other run is active.
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 3
+    permissions:
+      actions: read
+    outputs:
+      start: ${{ steps.decide.outputs.start }}
+    steps:
+      - name: Decide whether to start a watcher
+        id: decide
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          start=true
+          if [ "$GITHUB_EVENT_NAME" = "schedule" ]; then
+            others=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow iphone-duo-watch.yml \
+              --limit 30 --json databaseId,status \
+              --jq "[.[] | select(.databaseId != $GITHUB_RUN_ID and .status != \"completed\")] | length" \
+              || echo 0)
+            if [ "$others" -gt 0 ]; then
+              start=false
+              echo "A watcher is already running."
+            fi
+          fi
+          echo "start=$start" >> "$GITHUB_OUTPUT"
+
+  watch:
+    needs: gate
+    if: needs.gate.outputs.start == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 355
+    permissions:
+      contents: read
+      actions: write
     concurrency:
       group: iphone-duo-watch
       cancel-in-progress: false
@@ -48,6 +90,7 @@ jobs:
       NTFY_TOKEN: ${{ secrets.NTFY_TOKEN }}
       DUO_PARTS: ${{ vars.DUO_PARTS }}
       DUO_MAX_MILES: ${{ vars.DUO_MAX_MILES }}
+      PYTHONUNBUFFERED: "1"
     steps:
       - name: Check configuration
         id: config
@@ -77,14 +120,22 @@ jobs:
           key: duo-state-${{ github.run_id }}
           restore-keys: duo-state-
 
-      - name: Check stock and notify
-        id: check
+      - name: Watch, checking every 30 seconds
+        id: watch
         if: ${{ steps.config.outputs.ready == 'true' && !inputs.test_notification }}
-        run: python3 watch_iphone_duo.py
+        run: python3 watch_iphone_duo.py --loop 30 --minutes "${MINUTES:-330}"
+        env:
+          MINUTES: ${{ inputs.minutes }}
 
       - name: Remember what was announced
-        if: steps.check.outputs.state_changed == 'true'
+        if: ${{ always() && steps.watch.conclusion != 'skipped' && hashFiles('.duo-state.json') != '' }}
         uses: actions/cache/save@v5
         with:
           path: .duo-state.json
           key: duo-state-${{ github.run_id }}
+
+      - name: Hand over to a fresh run
+        if: ${{ success() && steps.watch.conclusion == 'success' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run iphone-duo-watch.yml --repo "$GITHUB_REPOSITORY" --ref "$GITHUB_REF_NAME"

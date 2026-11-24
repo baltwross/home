@@ -18,6 +18,10 @@ Configuration (environment variables):
     DUO_STATE_FILE  Where to remember what was already announced,
                     default .duo-state.json
 
+With --loop SECONDS the script keeps checking, that many seconds apart, for
+--minutes MINUTES. A failed check does not stop the loop; after ten in a row it
+sends one warning push, and another when checks work again.
+
 Exit codes: 0 check completed, 1 bad configuration, 2 Apple check failed,
 3 notification failed.
 
@@ -65,6 +69,7 @@ PARTS = {
 
 STORE_TABLE = "apple_stores_us.json"  # store number -> [latitude, longitude]
 PAGE_SIZE = 12  # Apple lists at most this many stores per query
+FAILURES_BEFORE_WARNING = 10  # consecutive failed checks in a loop
 MAX_QUERIES = 60  # stop and fail rather than hammer Apple if a search runs away
 EARTH_RADIUS_MILES = 3958.8
 
@@ -97,6 +102,13 @@ class Hit:
     @property
     def config(self) -> str:
         return PARTS.get(self.part, self.part)
+
+    @property
+    def buy_url(self) -> str:
+        """Apple's page for exactly this configuration (unlocked; carrier can be changed there)."""
+        if self.part not in PARTS:
+            return BUY_URL
+        return f"{BUY_URL}/7.6-inch-display-{self.config.lower().replace(' ', '-')}-unlocked"
 
 
 @dataclass(frozen=True)
@@ -364,6 +376,19 @@ def format_alert(hits: list[Hit]) -> tuple[str, str]:
     return title, "\n".join(lines)
 
 
+def alert_links(hits: list[Hit]) -> tuple[str, list[dict]]:
+    """Where a tap on the push goes, plus a button per configuration (ntfy allows three)."""
+    pages: dict[str, str] = {}
+    for hit in hits:
+        pages.setdefault(hit.config, hit.buy_url)
+    click = next(iter(pages.values())) if len(pages) == 1 else BUY_URL
+    buttons = [
+        {"action": "view", "label": f"Buy {config}", "url": url}
+        for config, url in list(pages.items())[:3]
+    ]
+    return click, buttons
+
+
 def send_ntfy(
     server: str,
     topic: str,
@@ -371,6 +396,8 @@ def send_ntfy(
     message: str,
     token: str = "",
     attempts: int = 3,
+    click: str = BUY_URL,
+    actions: list[dict] | None = None,
 ) -> None:
     """Publish a push. Rate limits (429) and server errors are retried."""
     payload = {
@@ -379,8 +406,10 @@ def send_ntfy(
         "message": message,
         "priority": 5,
         "tags": ["iphone"],
-        "click": BUY_URL,
+        "click": click,
     }
+    if actions:
+        payload["actions"] = actions
     headers = {"Content-Type": "application/json"}
     if token:
         headers["Authorization"] = f"Bearer {token}"
@@ -470,7 +499,7 @@ def run(args: argparse.Namespace, env: dict) -> int:
     previous = load_state(config["state_file"])
     new_hits = [hit for hit in hits if fingerprint(key, hit) not in previous]
 
-    print(f"Check complete: {len(hits)} available, {len(new_hits)} newly available.")
+    print(f"Check complete: {len(hits)} available, {len(new_hits)} newly available.", flush=True)
     if args.verbose:
         print(
             f"  {in_range} stores in range ({queries} queries), "
@@ -484,13 +513,54 @@ def run(args: argparse.Namespace, env: dict) -> int:
 
     if new_hits:
         title, body = format_alert(new_hits)
-        send_ntfy(config["server"], config["topic"], title, body, token=config["token"])
+        click, buttons = alert_links(new_hits)
+        send_ntfy(
+            config["server"], config["topic"], title, body,
+            token=config["token"], click=click, actions=buttons,
+        )
         print("Notification sent.")
     # Saved only after a successful send, so a failed push is retried next run.
     if current != previous:
         save_state(config["state_file"], current)
     write_github_output(state_changed=current != previous, available=len(hits))
     return EXIT_OK
+
+
+def run_loop(args: argparse.Namespace, env: dict) -> int:
+    """Check every args.loop seconds for args.minutes. Failed checks do not stop it."""
+    config = read_config(env, need_topic=not args.dry_run)
+
+    def tell(title: str, message: str) -> bool:
+        if args.dry_run:
+            return False
+        try:
+            send_ntfy(config["server"], config["topic"], title, message, token=config["token"])
+            return True
+        except NotifyError:
+            return False
+
+    deadline = time.monotonic() + args.minutes * 60
+    failures = 0
+    warned = False
+    while True:
+        started = time.monotonic()
+        try:
+            run(args, env)
+            failures = 0
+            if warned and tell("iPhone Duo watcher: working again", "Checks are succeeding again."):
+                warned = False
+        except (CheckError, NotifyError) as exc:
+            failures += 1
+            print(f"Check failed ({failures} in a row): {exc}", file=sys.stderr, flush=True)
+            if failures == FAILURES_BEFORE_WARNING and not warned:
+                warned = tell(
+                    "iPhone Duo watcher is failing",
+                    f"{failures} checks in a row have failed, latest: {exc}. It keeps trying.",
+                )
+        wait = max(0.0, args.loop - (time.monotonic() - started))
+        if time.monotonic() + wait >= deadline:
+            return EXIT_OK
+        time.sleep(wait)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -501,8 +571,14 @@ def main(argv: list[str] | None = None) -> int:
                         help="also print which stores have which configuration")
     parser.add_argument("--test-notify", action="store_true",
                         help="send a test push and exit without checking stock")
+    parser.add_argument("--loop", type=float, metavar="SECONDS",
+                        help="keep checking, this many seconds apart")
+    parser.add_argument("--minutes", type=float, default=330,
+                        help="with --loop: stop after this many minutes (default 330)")
     args = parser.parse_args(argv)
     try:
+        if args.loop is not None and not args.test_notify:
+            return run_loop(args, dict(os.environ))
         return run(args, dict(os.environ))
     except ConfigError as exc:
         print(f"Configuration error: {exc}", file=sys.stderr)

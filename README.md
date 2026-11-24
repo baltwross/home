@@ -38,7 +38,15 @@ one query in most places, about five in the densest areas. A store
 that opens later is still picked up when Apple lists it next to known ones; run
 `./refresh_apple_stores.py` to rebuild the table and be sure.
 
-The `iPhone Duo stock watch` workflow runs it every 5 minutes on GitHub Actions.
+The `iPhone Duo stock watch` workflow keeps it running on GitHub Actions: one run
+checks every 30 seconds for five and a half hours, then starts the next run before
+it ends. A schedule starts a watcher every 10 minutes if none is running, so it
+recovers by itself after a failure.
+
+The push opens Apple's page for the exact configuration (unlocked; the carrier
+can be changed there), with a button per configuration when there are several.
+
+To stop it, disable the workflow in the Actions tab and cancel the run in progress.
 
 ### Setup
 
@@ -71,15 +79,18 @@ White.
 
 - This repository is public, so the workflow logs are too. The scheduled run
   prints only counts; store names appear only in the push.
-- A run fails, and GitHub emails you, if Apple's endpoint stops answering or the
-  push cannot be sent. A failed push is retried on the next run.
-- GitHub can start scheduled runs several minutes late, and pauses schedules in
-  public repositories after 60 days without repository activity.
+- A failed check or push does not stop the watcher; it tries again 30 seconds
+  later. After ten failed checks in a row it sends one "watcher is failing" push,
+  and another when checks work again.
+- This holds one GitHub-hosted runner around the clock, which is more than
+  Actions is meant for. GitHub may throttle or disable it; the same script runs
+  anywhere with `./watch_iphone_duo.py --loop 30`.
 
 ### Running it locally
 
 ```bash
-DUO_ZIP=10001 ./watch_iphone_duo.py --dry-run --verbose   # check only
+DUO_ZIP=10001 ./watch_iphone_duo.py --dry-run --verbose   # check once, send nothing
+DUO_ZIP=10001 NTFY_TOPIC=your-topic ./watch_iphone_duo.py --loop 30   # keep watching
 python3 -m unittest discover -s tests                     # tests
 ```
 
