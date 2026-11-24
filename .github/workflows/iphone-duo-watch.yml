@@ -1,8 +1,11 @@
 name: iPhone Duo stock watch
 
 # One run watches continuously: it checks every 30 seconds for five and a half
-# hours, then starts the next run before it ends. The schedule is only a safety
-# net that starts a watcher when none is running.
+# hours, then starts the next run before it ends.
+#
+# A watcher starts by itself when a change to it is merged to main or pushed to
+# a pull request from this repository; that run replaces the one in progress.
+# The schedule is only a safety net that starts a watcher when none is running.
 #
 # To stop it: disable this workflow in the Actions tab, then cancel the run in
 # progress.
@@ -20,6 +23,14 @@ on:
         description: Minutes this run keeps watching before handing over
         type: number
         default: 330
+  push:
+    branches: [main]
+    paths:
+      - watch_iphone_duo.py
+      - refresh_apple_stores.py
+      - apple_stores_us.json
+      - tests/**
+      - .github/workflows/iphone-duo-watch.yml
   pull_request:
     paths:
       - watch_iphone_duo.py
@@ -46,8 +57,11 @@ jobs:
           DUO_ZIP: "10001"
 
   gate:
-    # A scheduled run starts a watcher only when no other run is active.
-    if: github.event_name != 'pull_request'
+    # A scheduled run starts a watcher only when no other run is active. Pull
+    # requests from forks never start one: they have no access to the secrets.
+    if: >-
+      github.event_name != 'pull_request' ||
+      github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 3
     permissions:
@@ -83,7 +97,8 @@ jobs:
       actions: write
     concurrency:
       group: iphone-duo-watch
-      cancel-in-progress: false
+      # New code replaces the watcher in progress; a handover waits for it to end.
+      cancel-in-progress: ${{ github.event_name == 'push' || github.event_name == 'pull_request' }}
     env:
       DUO_ZIP: ${{ secrets.DUO_ZIP }}
       NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
@@ -123,9 +138,10 @@ jobs:
       - name: Watch, checking every 30 seconds
         id: watch
         if: ${{ steps.config.outputs.ready == 'true' && !inputs.test_notification }}
-        run: python3 watch_iphone_duo.py --loop 30 --minutes "${MINUTES:-330}"
+        run: python3 watch_iphone_duo.py --loop 30 --minutes "$MINUTES"
         env:
-          MINUTES: ${{ inputs.minutes }}
+          # A pull request run is short, so that its handover is exercised too.
+          MINUTES: ${{ inputs.minutes || (github.event_name == 'pull_request' && 3) || 330 }}
 
       - name: Remember what was announced
         if: ${{ always() && steps.watch.conclusion != 'skipped' && hashFiles('.duo-state.json') != '' }}
@@ -138,4 +154,5 @@ jobs:
         if: ${{ success() && steps.watch.conclusion == 'success' }}
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh workflow run iphone-duo-watch.yml --repo "$GITHUB_REPOSITORY" --ref "$GITHUB_REF_NAME"
+          BRANCH: ${{ github.head_ref || github.ref_name }}
+        run: gh workflow run iphone-duo-watch.yml --repo "$GITHUB_REPOSITORY" --ref "$BRANCH"
