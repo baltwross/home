@@ -20,15 +20,23 @@ A collection of scripts and configurations for home automation, including Roomba
 - `monitor_iphone.sh`: Monitor iPhone status and connectivity
 - `setup_roomba.sh`: Setup and configure Roomba devices
 - `watch_iphone_duo.py`: Alert when a nearby Apple Store has an iPhone Duo ready for pickup
+- `refresh_apple_stores.py`: Rebuild the table of US Apple Store positions the watcher uses
 
 ## iPhone Duo stock watch
 
 `watch_iphone_duo.py` asks Apple's store-pickup endpoint about every iPhone Duo
-configuration at the Apple Stores near a ZIP code and sends an
+configuration at every Apple Store within 100 miles of a ZIP code and sends an
 [ntfy](https://ntfy.sh) push when one becomes available. The rule is fixed: a
 configuration counts as in stock only when Apple reports
 `pickupDisplay: "available"` for it at that store. Each (store, configuration)
 pair is announced once, and again only after it has gone out of stock and come back.
+
+Apple lists only the 12 nearest stores per query. Where that list stops short of
+the radius, the script takes every store in range from `apple_stores_us.json` (the
+positions of all US Apple Stores) and asks again around the ones not yet seen:
+one query in most places, about five in the densest areas. A store
+that opens later is still picked up when Apple lists it next to known ones; run
+`./refresh_apple_stores.py` to rebuild the table and be sure.
 
 The `iPhone Duo stock watch` workflow runs it every 5 minutes on GitHub Actions.
 
@@ -50,7 +58,7 @@ Until both secrets exist, scheduled runs skip the check with a warning.
 
 | Name | Kind | Default | Meaning |
 | --- | --- | --- | --- |
-| `DUO_MAX_MILES` | variable | `50` | Ignore stores further away than this |
+| `DUO_MAX_MILES` | variable | `100` | Check every Apple Store within this many miles |
 | `DUO_PARTS` | variable | all eight | Comma-separated part numbers to watch |
 | `NTFY_TOKEN` | secret | none | ntfy access token, if pushes get rate limited (HTTP 429) |
 

@@ -13,6 +13,8 @@ on:
   pull_request:
     paths:
       - watch_iphone_duo.py
+      - refresh_apple_stores.py
+      - apple_stores_us.json
       - tests/**
       - .github/workflows/iphone-duo-watch.yml
 
