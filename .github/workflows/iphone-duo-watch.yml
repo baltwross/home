@@ -1,18 +1,27 @@
 name: iPhone Duo stock watch
 
+# The watcher is off: nothing here starts by itself.
+#
+# To start it, run this workflow by hand from the Actions tab. One run then
+# checks every 30 seconds for five and a half hours and starts the next run
+# before it ends, so it keeps going until you cancel the run in progress.
+
 on:
-  schedule:
-    # Every 5 minutes (GitHub's minimum), offset from the busy top of the hour.
-    - cron: "3-59/5 * * * *"
   workflow_dispatch:
     inputs:
       test_notification:
         description: Send a test push instead of checking stock
         type: boolean
         default: false
+      minutes:
+        description: Minutes this run keeps watching before handing over
+        type: number
+        default: 330
   pull_request:
     paths:
       - watch_iphone_duo.py
+      - refresh_apple_stores.py
+      - apple_stores_us.json
       - tests/**
       - .github/workflows/iphone-duo-watch.yml
 
@@ -34,11 +43,15 @@ jobs:
           DUO_ZIP: "10001"
 
   watch:
-    if: github.event_name != 'pull_request'
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 355
+    permissions:
+      contents: read
+      actions: write
     concurrency:
       group: iphone-duo-watch
+      # A handover waits for the run in progress to end.
       cancel-in-progress: false
     env:
       DUO_ZIP: ${{ secrets.DUO_ZIP }}
@@ -46,15 +59,13 @@ jobs:
       NTFY_TOKEN: ${{ secrets.NTFY_TOKEN }}
       DUO_PARTS: ${{ vars.DUO_PARTS }}
       DUO_MAX_MILES: ${{ vars.DUO_MAX_MILES }}
+      PYTHONUNBUFFERED: "1"
     steps:
       - name: Check configuration
         id: config
         run: |
           if [ -n "$DUO_ZIP" ] && [ -n "$NTFY_TOPIC" ]; then
             echo "ready=true" >> "$GITHUB_OUTPUT"
-          elif [ "$GITHUB_EVENT_NAME" = "schedule" ]; then
-            echo "::warning::Not watching yet: add the DUO_ZIP and NTFY_TOPIC repository secrets."
-            echo "ready=false" >> "$GITHUB_OUTPUT"
           else
             echo "::error::Add the DUO_ZIP and NTFY_TOPIC repository secrets first."
             exit 1
@@ -75,14 +86,23 @@ jobs:
           key: duo-state-${{ github.run_id }}
           restore-keys: duo-state-
 
-      - name: Check stock and notify
-        id: check
+      - name: Watch, checking every 30 seconds
+        id: watch
         if: ${{ steps.config.outputs.ready == 'true' && !inputs.test_notification }}
-        run: python3 watch_iphone_duo.py
+        run: python3 watch_iphone_duo.py --loop 30 --minutes "$MINUTES"
+        env:
+          MINUTES: ${{ inputs.minutes || 330 }}
 
       - name: Remember what was announced
-        if: steps.check.outputs.state_changed == 'true'
+        if: ${{ always() && steps.watch.conclusion != 'skipped' && hashFiles('.duo-state.json') != '' }}
         uses: actions/cache/save@v5
         with:
           path: .duo-state.json
           key: duo-state-${{ github.run_id }}
+
+      - name: Hand over to a fresh run
+        if: ${{ success() && steps.watch.conclusion == 'success' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH: ${{ github.head_ref || github.ref_name }}
+        run: gh workflow run iphone-duo-watch.yml --repo "$GITHUB_REPOSITORY" --ref "$BRANCH"

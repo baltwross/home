@@ -20,17 +20,32 @@ A collection of scripts and configurations for home automation, including Roomba
 - `monitor_iphone.sh`: Monitor iPhone status and connectivity
 - `setup_roomba.sh`: Setup and configure Roomba devices
 - `watch_iphone_duo.py`: Alert when a nearby Apple Store has an iPhone Duo ready for pickup
+- `refresh_apple_stores.py`: Rebuild the table of US Apple Store positions the watcher uses
 
 ## iPhone Duo stock watch
 
 `watch_iphone_duo.py` asks Apple's store-pickup endpoint about every iPhone Duo
-configuration at the Apple Stores near a ZIP code and sends an
+configuration at every Apple Store within 100 miles of a ZIP code and sends an
 [ntfy](https://ntfy.sh) push when one becomes available. The rule is fixed: a
 configuration counts as in stock only when Apple reports
 `pickupDisplay: "available"` for it at that store. Each (store, configuration)
 pair is announced once, and again only after it has gone out of stock and come back.
 
-The `iPhone Duo stock watch` workflow runs it every 5 minutes on GitHub Actions.
+Apple lists only the 12 nearest stores per query. Where that list stops short of
+the radius, the script takes every store in range from `apple_stores_us.json` (the
+positions of all US Apple Stores) and asks again around the ones not yet seen:
+one query in most places, about five in the densest areas. A store
+that opens later is still picked up when Apple lists it next to known ones; run
+`./refresh_apple_stores.py` to rebuild the table and be sure.
+
+The watcher is currently off: nothing starts it automatically.
+
+To start it, open Actions → iPhone Duo stock watch → Run workflow. One run then
+checks every 30 seconds for five and a half hours and starts the next run before
+it ends, so it keeps going until you cancel the run in progress.
+
+The push opens Apple's page for the exact configuration (unlocked; the carrier
+can be changed there), with a button per configuration when there are several.
 
 ### Setup
 
@@ -44,13 +59,13 @@ The `iPhone Duo stock watch` workflow runs it every 5 minutes on GitHub Actions.
 3. Open Actions → iPhone Duo stock watch → Run workflow, tick
    "Send a test push", and confirm the push arrives.
 
-Until both secrets exist, scheduled runs skip the check with a warning.
+A run fails straight away if either secret is missing.
 
 ### Options
 
 | Name | Kind | Default | Meaning |
 | --- | --- | --- | --- |
-| `DUO_MAX_MILES` | variable | `50` | Ignore stores further away than this |
+| `DUO_MAX_MILES` | variable | `100` | Check every Apple Store within this many miles |
 | `DUO_PARTS` | variable | all eight | Comma-separated part numbers to watch |
 | `NTFY_TOKEN` | secret | none | ntfy access token, if pushes get rate limited (HTTP 429) |
 
@@ -63,15 +78,18 @@ White.
 
 - This repository is public, so the workflow logs are too. The scheduled run
   prints only counts; store names appear only in the push.
-- A run fails, and GitHub emails you, if Apple's endpoint stops answering or the
-  push cannot be sent. A failed push is retried on the next run.
-- GitHub can start scheduled runs several minutes late, and pauses schedules in
-  public repositories after 60 days without repository activity.
+- A failed check or push does not stop the watcher; it tries again 30 seconds
+  later. After ten failed checks in a row it sends one "watcher is failing" push,
+  and another when checks work again.
+- This holds one GitHub-hosted runner around the clock, which is more than
+  Actions is meant for. GitHub may throttle or disable it; the same script runs
+  anywhere with `./watch_iphone_duo.py --loop 30`.
 
 ### Running it locally
 
 ```bash
-DUO_ZIP=10001 ./watch_iphone_duo.py --dry-run --verbose   # check only
+DUO_ZIP=10001 ./watch_iphone_duo.py --dry-run --verbose   # check once, send nothing
+DUO_ZIP=10001 NTFY_TOPIC=your-topic ./watch_iphone_duo.py --loop 30   # keep watching
 python3 -m unittest discover -s tests                     # tests
 ```
 
