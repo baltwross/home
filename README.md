@@ -38,15 +38,14 @@ one query in most places, about five in the densest areas. A store
 that opens later is still picked up when Apple lists it next to known ones; run
 `./refresh_apple_stores.py` to rebuild the table and be sure.
 
-The `iPhone Duo stock watch` workflow keeps it running on GitHub Actions: one run
-checks every 30 seconds for five and a half hours, then starts the next run before
-it ends. A schedule starts a watcher every 10 minutes if none is running, so it
-recovers by itself after a failure.
+The watcher is currently off: nothing starts it automatically.
+
+To start it, open Actions → iPhone Duo stock watch → Run workflow. One run then
+checks every 30 seconds for five and a half hours and starts the next run before
+it ends, so it keeps going until you cancel the run in progress.
 
 The push opens Apple's page for the exact configuration (unlocked; the carrier
 can be changed there), with a button per configuration when there are several.
-
-To stop it, disable the workflow in the Actions tab and cancel the run in progress.
 
 ### Setup
 
@@ -60,7 +59,7 @@ To stop it, disable the workflow in the Actions tab and cancel the run in progre
 3. Open Actions → iPhone Duo stock watch → Run workflow, tick
    "Send a test push", and confirm the push arrives.
 
-Until both secrets exist, scheduled runs skip the check with a warning.
+A run fails straight away if either secret is missing.
 
 ### Options
 

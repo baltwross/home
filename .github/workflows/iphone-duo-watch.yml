@@ -42,20 +42,6 @@ jobs:
         env:
           DUO_ZIP: "10001"
 
-  stop:
-    # One-off: takes the watcher's slot, which ends the run in progress and any
-    # run waiting behind it. A cancelled run does not hand over.
-    if: >-
-      github.event_name == 'pull_request' &&
-      github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ubuntu-latest
-    timeout-minutes: 2
-    concurrency:
-      group: iphone-duo-watch
-      cancel-in-progress: true
-    steps:
-      - run: echo "Watcher stopped."
-
   watch:
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
